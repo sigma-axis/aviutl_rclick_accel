@@ -6,7 +6,7 @@
 
 ![アクセラレータキーの例1](https://github.com/user-attachments/assets/03e2e3ab-59e7-4cfa-a891-e11c60c1871f) ![アクセラレータキーの例2](https://github.com/user-attachments/assets/99e750e8-770f-4e6d-9489-b386ace64f47) ![アルティメットプラグインとも共存可能](https://github.com/user-attachments/assets/b8e3ca5c-494b-415d-8363-cd9da772af5d)
 
-[ダウンロードはこちら．](https://github.com/sigma-axis/aviutl_rclick_accel/releases) \[紹介動画準備中...\]
+[ダウンロードはこちら．](https://github.com/sigma-axis/aviutl_rclick_accel/releases) [紹介動画．](https://www.nicovideo.jp/watch/sm44613705)
 
 ## 動作要件
 
