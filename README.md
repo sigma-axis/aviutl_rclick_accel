@@ -10,7 +10,7 @@
 
 TODO: image.
 
-[ダウンロードはこちら．](https://github.com/sigma-axis/aviutl_rclick_accel/releases) \[紹介動画準備中...\]
+[ダウンロードはこちら．](https://github.com/sigma-axis/aviutl_rclick_accel/releases) [紹介動画．](https://www.nicovideo.jp/watch/sm44613705)
 
 ## 動作要件
 
