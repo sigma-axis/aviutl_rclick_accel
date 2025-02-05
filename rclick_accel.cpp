@@ -111,13 +111,16 @@ inline constinit struct ExEdit092 {
 ////////////////////////////////
 // 文字列置き換え対象のデータ．
 ////////////////////////////////
-struct replace_target {
+struct modify_target {
 	char const* section;
 	std::vector<ptrdiff_t> const offsets; // HMENU が格納されている exedit.fp->dll_hinst からの相対アドレス．
 	std::vector<wchar_t const*> const pending_roots;
+
+	// セパレータ追加を指定する接頭辞．
+	constexpr static std::wstring_view sep_prefix = L"sep:";
 };
 
-static replace_target const menu_data[] = {
+static modify_target const menu_data[] = {
 	{
 		"timeline_blank",
 		{
@@ -158,7 +161,7 @@ static replace_target const menu_data[] = {
 		{},
 	},
 };
-static replace_target const filter_menu_data = {
+static modify_target const filter_menu_data = {
 	"filters",
 	{
 		0x167d78, // 図形やテキストオブジェクトなどの，入力フィルタ切り替えボタン．
@@ -191,89 +194,116 @@ constexpr static struct {
 inline static char read_accel_key(char const* ini_file, char const* section, char const* item_name)
 {
 	// read one character from .ini file.
-	char buf[16];
+	char buf[4], &key = buf[0];
 	::GetPrivateProfileStringA(section, item_name, "", buf, std::size(buf), ini_file);
 
 	// check if the key is valid.
-	char key = std::toupper(buf[0]);
-	if (key < '\x2a' || key > '\x7e') key = '\0';
+	if ('\x2a' <= key && key <= '\x7e') key = std::toupper(key);
+	else key = '\0';
 	return key;
 }
-
-inline static void replace_menu_text_core(HMENU hmenu, char const* ini_file, char const* section,
-	std::map<std::wstring, std::wstring>& replace,
-	std::set<HMENU>* pendings, std::set<std::wstring> const* pending_roots)
+inline static bool read_insert_sep(char const* ini_file, char const* section, char const* sep_item_name)
 {
-	for (int i = 0, n = ::GetMenuItemCount(hmenu); i < n; i++) {
-		// get the name and submenu of the menu item.
-		std::wstring name; HMENU submenu;
-		MENUITEMINFOW mii{
-			.cbSize = sizeof(mii),
-			.fMask = MIIM_STRING | MIIM_SUBMENU | MIIM_FTYPE,
-		};
-		if (wchar_t buf[256]; mii.dwTypeData = buf, mii.cch = std::size(buf),
-			::GetMenuItemInfoW(hmenu, i, TRUE, &mii) == FALSE ||
-			buf[0] == L'\0' || (mii.fType & MFT_SEPARATOR) != 0) continue;
-		else {
-			name = buf;
-			submenu = mii.hSubMenu;
-		}
+	return ::GetPrivateProfileIntA(section, sep_item_name, 0, ini_file) != 0;
+}
+inline static auto read_item_modification(char const* ini_file, char const* section, std::wstring const& item_name)
+{
+	auto sep_item_name = encode_sys::from_wide_str(std::wstring{ modify_target::sep_prefix } + item_name);
 
-		// find or create the replacement text.
-		auto it = replace.find(name);
-		if (it == replace.end()) {
-			// load the accelerator key from the .ini file.
-			auto key = read_accel_key(ini_file, section, encode_sys::from_wide_str(name).c_str());
-			it = replace.emplace(name, key == '\0' ? L"" :
-				name + L" (&" + static_cast<wchar_t>(key) + L")").first;
-		}
+	// load the accelerator key from the .ini file.
+	char key = read_accel_key(ini_file, section, sep_item_name.c_str() + modify_target::sep_prefix.size());
 
-		// replace the text if valid.
-		if (!it->second.empty()) {
-			mii.fMask = MIIM_STRING;
-			mii.dwTypeData = it->second.data();
-			::SetMenuItemInfoW(hmenu, i, TRUE, &mii);
-		}
+	// load whether the separator should be inserted.
+	bool sep = read_insert_sep(ini_file, section, sep_item_name.c_str());
 
-		// to the deeper level.
-		if (submenu != nullptr) {
-			if (pendings != nullptr && pending_roots != nullptr && pending_roots->contains(name))
-				// handle this later.
-				pendings->emplace(submenu);
-			else
-				// recursively handle this branch.
-				replace_menu_text_core(submenu, ini_file, section,
-					replace, pendings, pending_roots);
-		}
-	}
+	return std::pair{
+		key == '\0' ? L"" : item_name + L" (&" + static_cast<wchar_t>(key) + L")" ,
+		sep
+	};
 }
 
-inline static void replace_menu_text(char const* ini_file, replace_target const& target,
+inline static void modify_menu_items(HMENU hmenu, char const* ini_file, char const* section,
+	std::map<std::wstring, std::pair<std::wstring, bool>>& ini_cache,
+	std::set<HMENU>* pendings, std::set<std::wstring> const* pending_roots)
+{
+	std::set<HMENU> handled{}; // to avoid potential infinite loop.
+	[&](this auto&& self, HMENU hmenu) -> void {
+		handled.emplace(hmenu);
+
+		for (int i = ::GetMenuItemCount(hmenu); --i >= 0; ) {
+			// get the name and submenu of the menu item.
+			std::wstring name; HMENU submenu;
+			MENUITEMINFOW mii{
+				.cbSize = sizeof(mii),
+				.fMask = MIIM_STRING | MIIM_SUBMENU | MIIM_FTYPE,
+			};
+			if (wchar_t buf[256]; mii.dwTypeData = buf, mii.cch = std::size(buf),
+				::GetMenuItemInfoW(hmenu, i, TRUE, &mii) == FALSE ||
+				buf[0] == L'\0' || (mii.fType & MFT_SEPARATOR) != 0) continue;
+			else {
+				name = buf;
+				submenu = mii.hSubMenu;
+			}
+
+			// find or create the cache data of the .ini file.
+			auto it = ini_cache.find(name);
+			if (it == ini_cache.end())
+				it = ini_cache.emplace(name, read_item_modification(ini_file, section, name)).first;
+			auto const& [repl, sep] = it->second;
+
+			// replace the text if valid.
+			if (!repl.empty()) {
+				mii.fMask = MIIM_STRING;
+				mii.dwTypeData = const_cast<wchar_t*>(repl.c_str());
+				::SetMenuItemInfoW(hmenu, i, TRUE, &mii);
+			}
+
+			// insert a separator if specified.
+			if (sep) {
+				mii.fMask = MIIM_FTYPE;
+				mii.fType = MFT_SEPARATOR;
+				::InsertMenuItemW(hmenu, i, TRUE, &mii);
+			}
+
+			// to the deeper level.
+			if (submenu != nullptr) {
+				if (pendings != nullptr && pending_roots != nullptr && pending_roots->contains(name))
+					// handle this later.
+					pendings->emplace(submenu);
+				else if (!handled.contains(submenu))
+					// recursively handle this branch.
+					self(submenu);
+			}
+		}
+	} (hmenu);
+}
+
+inline static void modify_menu_text(char const* ini_file, modify_target const& target,
 	std::set<HMENU>& pendings)
 {
-	std::map<std::wstring, std::wstring> replace{};
+	std::map<std::wstring, std::pair<std::wstring, bool>> ini_cache{};
 	std::set<std::wstring> filter_roots{};
 
 	// prepare filter_roots.
 	for (auto const& parent : target.pending_roots)
 		filter_roots.emplace(parent);
 
-	// replace the text of all targets.
+	// apply modification to all targets.
 	for (auto const& offset : target.offsets) {
-		replace_menu_text_core(::GetSubMenu(exedit.get_menu_handle(offset), 0),
+		modify_menu_items(::GetSubMenu(exedit.get_menu_handle(offset), 0),
 			ini_file, target.section,
-			replace, &pendings, &filter_roots);
+			ini_cache, &pendings, &filter_roots);
 	}
 }
 
-inline static void replace_easing_menu_text(char const* ini_file)
+inline static void modify_easing_menu_text(char const* ini_file)
 {
 	HMENU menu = ::GetSubMenu(exedit.get_menu_handle(easing_menu.offset_root_menu), 0);
 
 	// list of easing items.
 	{
-		std::map<std::wstring, std::wstring> easing_replace{};
-		replace_menu_text_core(menu, ini_file, easing_menu.item_section, easing_replace, nullptr, nullptr);
+		std::map<std::wstring, std::pair<std::wstring, bool>> ini_cache{};
+		modify_menu_items(menu, ini_file, easing_menu.item_section, ini_cache, nullptr, nullptr);
 	}
 
 	// acceleration and deceleration settings.
@@ -353,21 +383,21 @@ BOOL func_wndproc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, AviUtl:
 		auto len = ::GetModuleFileNameA(fp->dll_hinst, ini_file, std::size(ini_file));
 		::strncpy_s(ini_file + len - 3, 4, "ini", 3);
 
-		// perform the replacements of menu text.
+		// apply the modifications to menus.
 		std::set<HMENU> pendings{};
 
 		// generic ones.
-		for (auto& target : menu_data) replace_menu_text(ini_file, target, pendings);
+		for (auto& target : menu_data) modify_menu_text(ini_file, target, pendings);
 
 		// filter menu.
 		for (auto ofs : filter_menu_data.offsets)
 			pendings.emplace(::GetSubMenu(exedit.get_menu_handle(ofs), 0));
-		for (std::map<std::wstring, std::wstring> replace{};
-			auto hmenu : pendings) replace_menu_text_core(hmenu, ini_file, filter_menu_data.section,
-				replace, nullptr, nullptr);
+		for (std::map<std::wstring, std::pair<std::wstring, bool>> ini_cache{};
+			auto hmenu : pendings) modify_menu_items(hmenu, ini_file, filter_menu_data.section,
+				ini_cache, nullptr, nullptr);
 
 		// easing menu.
-		replace_easing_menu_text(ini_file);
+		modify_easing_menu_text(ini_file);
 
 		// もう必要ないので，message-only window を削除．コールバックも解除．
 		fp->hwnd = nullptr; ::DestroyWindow(hwnd);
@@ -398,7 +428,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"右クリメニューショトカ追加"
-#define PLUGIN_VERSION	"v1.00"
+#define PLUGIN_VERSION	"v1.10-beta2"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
