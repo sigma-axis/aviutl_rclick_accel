@@ -207,7 +207,7 @@ struct sep_pos {
 	constexpr static int8_t flag_above = 0b01, flag_below = 0b10;
 	constexpr bool above() const { return (raw & flag_above) != 0; }
 	constexpr bool below() const { return (raw & flag_below) != 0; }
-	constexpr operator bool() const { return raw != 0; }
+	constexpr operator bool() const { return (raw & (flag_above | flag_below)) != 0; }
 };
 inline static sep_pos read_insert_sep(char const* ini_file, char const* section, char const* sep_item_name)
 {
@@ -451,7 +451,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"右クリメニューショトカ追加"
-#define PLUGIN_VERSION	"v1.12"
+#define PLUGIN_VERSION	"v1.13-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
