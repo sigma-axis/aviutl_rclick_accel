@@ -230,7 +230,7 @@ inline static auto read_item_modification(char const* ini_file, char const* sect
 	};
 }
 
-inline static bool has_separator_at(HMENU hmenu, int pos)
+inline static bool allow_separator_at(HMENU hmenu, int pos)
 {
 	if (pos < 0 || pos >= ::GetMenuItemCount(hmenu)) return false;
 
@@ -239,7 +239,7 @@ inline static bool has_separator_at(HMENU hmenu, int pos)
 		.fMask = MIIM_FTYPE,
 	};
 	return ::GetMenuItemInfoW(hmenu, pos, TRUE, &mii) != FALSE
-		&& (mii.fType & MFT_SEPARATOR) != 0;
+		&& (mii.fType & MFT_SEPARATOR) == 0;
 }
 inline static void modify_menu_items(HMENU hmenu, char const* ini_file, char const* section,
 	std::map<std::wstring, std::pair<std::wstring, sep_pos>>& ini_cache,
@@ -282,9 +282,9 @@ inline static void modify_menu_items(HMENU hmenu, char const* ini_file, char con
 				mii.fMask = MIIM_FTYPE;
 				mii.fType = MFT_SEPARATOR;
 
-				if (sep.below() && !has_separator_at(hmenu, i + 1))
+				if (sep.below() && allow_separator_at(hmenu, i + 1))
 					::InsertMenuItemW(hmenu, i + 1, TRUE, &mii);
-				if (sep.above() && !has_separator_at(hmenu, i - 1))
+				if (sep.above() && allow_separator_at(hmenu, i - 1))
 					::InsertMenuItemW(hmenu, i, TRUE, &mii);
 			}
 
@@ -451,7 +451,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"右クリメニューショトカ追加"
-#define PLUGIN_VERSION	"v1.11"
+#define PLUGIN_VERSION	"v1.12-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
