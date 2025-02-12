@@ -202,9 +202,17 @@ inline static char read_accel_key(char const* ini_file, char const* section, cha
 	else key = '\0';
 	return key;
 }
-inline static bool read_insert_sep(char const* ini_file, char const* section, char const* sep_item_name)
+struct sep_pos {
+	int8_t raw;
+	constexpr static int8_t flag_above = 0b01, flag_below = 0b10;
+	constexpr bool above() const { return (raw & flag_above) != 0; }
+	constexpr bool below() const { return (raw & flag_below) != 0; }
+	constexpr operator bool() const { return raw != 0; }
+};
+inline static sep_pos read_insert_sep(char const* ini_file, char const* section, char const* sep_item_name)
 {
-	return ::GetPrivateProfileIntA(section, sep_item_name, 0, ini_file) != 0;
+	return { static_cast<decltype(sep_pos::raw)>(
+		::GetPrivateProfileIntA(section, sep_item_name, 0, ini_file)) };
 }
 inline static auto read_item_modification(char const* ini_file, char const* section, std::wstring const& item_name)
 {
@@ -214,16 +222,27 @@ inline static auto read_item_modification(char const* ini_file, char const* sect
 	char key = read_accel_key(ini_file, section, sep_item_name.c_str() + modify_target::sep_prefix.size());
 
 	// load whether the separator should be inserted.
-	bool sep = read_insert_sep(ini_file, section, sep_item_name.c_str());
+	auto sep = read_insert_sep(ini_file, section, sep_item_name.c_str());
 
 	return std::pair{
 		key == '\0' ? L"" : item_name + L" (&" + static_cast<wchar_t>(key) + L")" ,
-		sep
+		sep,
 	};
 }
 
+inline static bool has_separator_at(HMENU hmenu, int pos)
+{
+	if (pos < 0 || pos >= ::GetMenuItemCount(hmenu)) return false;
+
+	MENUITEMINFOW mii{
+		.cbSize = sizeof(mii),
+		.fMask = MIIM_FTYPE,
+	};
+	return ::GetMenuItemInfoW(hmenu, pos, TRUE, &mii) != FALSE
+		&& (mii.fType & MFT_SEPARATOR) != 0;
+}
 inline static void modify_menu_items(HMENU hmenu, char const* ini_file, char const* section,
-	std::map<std::wstring, std::pair<std::wstring, bool>>& ini_cache,
+	std::map<std::wstring, std::pair<std::wstring, sep_pos>>& ini_cache,
 	std::set<HMENU>* pendings, std::set<std::wstring> const* pending_roots)
 {
 	std::set<HMENU> handled{}; // to avoid potential infinite loop.
@@ -262,7 +281,11 @@ inline static void modify_menu_items(HMENU hmenu, char const* ini_file, char con
 			if (sep) {
 				mii.fMask = MIIM_FTYPE;
 				mii.fType = MFT_SEPARATOR;
-				::InsertMenuItemW(hmenu, i, TRUE, &mii);
+
+				if (sep.below() && !has_separator_at(hmenu, i + 1))
+					::InsertMenuItemW(hmenu, i + 1, TRUE, &mii);
+				if (sep.above() && !has_separator_at(hmenu, i - 1))
+					::InsertMenuItemW(hmenu, i, TRUE, &mii);
 			}
 
 			// to the deeper level.
@@ -281,7 +304,7 @@ inline static void modify_menu_items(HMENU hmenu, char const* ini_file, char con
 inline static void modify_menu_text(char const* ini_file, modify_target const& target,
 	std::set<HMENU>& pendings)
 {
-	std::map<std::wstring, std::pair<std::wstring, bool>> ini_cache{};
+	std::map<std::wstring, std::pair<std::wstring, sep_pos>> ini_cache{};
 	std::set<std::wstring> filter_roots{};
 
 	// prepare filter_roots.
@@ -302,7 +325,7 @@ inline static void modify_easing_menu_text(char const* ini_file)
 
 	// list of easing items.
 	{
-		std::map<std::wstring, std::pair<std::wstring, bool>> ini_cache{};
+		std::map<std::wstring, std::pair<std::wstring, sep_pos>> ini_cache{};
 		modify_menu_items(menu, ini_file, easing_menu.item_section, ini_cache, nullptr, nullptr);
 	}
 
@@ -392,7 +415,7 @@ BOOL func_wndproc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, AviUtl:
 		// filter menu.
 		for (auto ofs : filter_menu_data.offsets)
 			pendings.emplace(::GetSubMenu(exedit.get_menu_handle(ofs), 0));
-		for (std::map<std::wstring, std::pair<std::wstring, bool>> ini_cache{};
+		for (std::map<std::wstring, std::pair<std::wstring, sep_pos>> ini_cache{};
 			auto hmenu : pendings) modify_menu_items(hmenu, ini_file, filter_menu_data.section,
 				ini_cache, nullptr, nullptr);
 
@@ -428,7 +451,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"右クリメニューショトカ追加"
-#define PLUGIN_VERSION	"v1.10"
+#define PLUGIN_VERSION	"v1.11-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
