@@ -214,7 +214,8 @@ inline static sep_pos read_insert_sep(char const* ini_file, char const* section,
 	return { static_cast<decltype(sep_pos::raw)>(
 		::GetPrivateProfileIntA(section, sep_item_name, 0, ini_file)) };
 }
-inline static auto read_item_modification(char const* ini_file, char const* section, std::wstring const& item_name)
+using item_data = std::pair<std::wstring, sep_pos>;
+inline static item_data read_item_modification(char const* ini_file, char const* section, std::wstring const& item_name)
 {
 	auto sep_item_name = encode_sys::from_wide_str(std::wstring{ modify_target::sep_prefix } + item_name);
 
@@ -224,7 +225,7 @@ inline static auto read_item_modification(char const* ini_file, char const* sect
 	// load whether the separator should be inserted.
 	auto sep = read_insert_sep(ini_file, section, sep_item_name.c_str());
 
-	return std::pair{
+	return {
 		key == '\0' ? L"" : item_name + L" (&" + static_cast<wchar_t>(key) + L")" ,
 		sep,
 	};
@@ -242,7 +243,7 @@ inline static bool allow_separator_at(HMENU hmenu, int pos)
 		&& (mii.fType & MFT_SEPARATOR) == 0;
 }
 inline static void modify_menu_items(HMENU hmenu, char const* ini_file, char const* section,
-	std::map<std::wstring, std::pair<std::wstring, sep_pos>>& ini_cache,
+	std::map<std::wstring, item_data>& ini_cache,
 	std::set<HMENU>* pendings, std::set<std::wstring> const* pending_roots)
 {
 	std::set<HMENU> handled{}; // to avoid potential infinite loop.
@@ -304,7 +305,7 @@ inline static void modify_menu_items(HMENU hmenu, char const* ini_file, char con
 inline static void modify_menu_text(char const* ini_file, modify_target const& target,
 	std::set<HMENU>& pendings)
 {
-	std::map<std::wstring, std::pair<std::wstring, sep_pos>> ini_cache{};
+	std::map<std::wstring, item_data> ini_cache{};
 	std::set<std::wstring> filter_roots{};
 
 	// prepare filter_roots.
@@ -325,7 +326,7 @@ inline static void modify_easing_menu_text(char const* ini_file)
 
 	// list of easing items.
 	{
-		std::map<std::wstring, std::pair<std::wstring, sep_pos>> ini_cache{};
+		std::map<std::wstring, item_data> ini_cache{};
 		modify_menu_items(menu, ini_file, easing_menu.item_section, ini_cache, nullptr, nullptr);
 	}
 
@@ -415,7 +416,7 @@ BOOL func_wndproc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, AviUtl:
 		// filter menu.
 		for (auto ofs : filter_menu_data.offsets)
 			pendings.emplace(::GetSubMenu(exedit.get_menu_handle(ofs), 0));
-		for (std::map<std::wstring, std::pair<std::wstring, sep_pos>> ini_cache{};
+		for (std::map<std::wstring, item_data> ini_cache{};
 			auto hmenu : pendings) modify_menu_items(hmenu, ini_file, filter_menu_data.section,
 				ini_cache, nullptr, nullptr);
 
@@ -451,7 +452,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"右クリメニューショトカ追加"
-#define PLUGIN_VERSION	"v1.13-beta1"
+#define PLUGIN_VERSION	"v1.13-beta2"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
