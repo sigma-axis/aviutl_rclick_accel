@@ -11,6 +11,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 */
 
 #include <cstdint>
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <bit>
@@ -401,11 +402,26 @@ BOOL func_wndproc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, AviUtl:
 	switch (message) {
 		using Message = AviUtl::FilterPlugin::WindowMessage;
 	case Message::ChangeWindow:
+	case WM_TIMER:
 	{
 		// find the path to the ini file.
 		char ini_file[MAX_PATH];
-		auto len = ::GetModuleFileNameA(fp->dll_hinst, ini_file, std::size(ini_file));
+		auto const len = ::GetModuleFileNameA(fp->dll_hinst, ini_file, std::size(ini_file));
 		::strncpy_s(ini_file + len - 3, 4, "ini", 3);
+
+		// delayed injection.
+		constexpr auto timer_id = [] { return reinterpret_cast<uintptr_t>(&menu_data); };
+		if (message != WM_TIMER) {
+			// apply delay if specified.
+			int const delay_ms = ::GetPrivateProfileIntA("system", "delay_ms", 0, ini_file);
+			if (delay_ms > 0) {
+				::SetTimer(hwnd, timer_id(), std::clamp(delay_ms, USER_TIMER_MINIMUM, 1000), nullptr);
+				break;
+			}
+		}
+		else if (static_cast<uintptr_t>(wparam) == timer_id())
+			::KillTimer(hwnd, timer_id()); // on delayed call.
+		else break;
 
 		// apply the modifications to menus.
 		std::set<HMENU> pendings{};
@@ -451,8 +467,8 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 ////////////////////////////////
 // 看板．
 ////////////////////////////////
-#define PLUGIN_NAME		"右クリメニューショトカ追加"
-#define PLUGIN_VERSION	"v1.13-beta2"
+#define PLUGIN_NAME		"右クリメニューカスタマイズ"
+#define PLUGIN_VERSION	"v1.13-beta3"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
