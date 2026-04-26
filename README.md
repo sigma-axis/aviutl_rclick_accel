@@ -12,6 +12,12 @@
 
 [ダウンロードはこちら．](https://github.com/sigma-axis/aviutl_rclick_accel/releases) [紹介動画．](https://www.nicovideo.jp/watch/sm44613705)
 
+##  お願い
+
+このプラグインを使った動画などでは，ニコニコの親作品にこのプラグインの紹介動画を登録してくれると嬉しいです．任意ではありますが，登録してくれたほうが励みになります．
+
+- 登録 ID: `sm44613705`
+
 ## 動作要件
 
 - AviUtl 1.10 + 拡張編集 0.92
